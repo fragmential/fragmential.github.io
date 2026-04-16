@@ -1,0 +1,11 @@
+.vscode
+.DS_Store
+__pycache__
+index.html
+*.aux
+*.bbl
+*.blg
+*.out
+*.pdf
+*.log
+*.gz

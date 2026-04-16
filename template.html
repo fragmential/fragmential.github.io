@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+$if(author)$  <meta name="author" content="$for(author)$$author$$sep$, $endfor$" />
+$endif$
+$if(date)$  <meta name="dcterms.date" content="$date$" />
+$endif$
+  <title>$pagetitle$</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+$for(header-includes)$
+  $header-includes$
+$endfor$
+$if(math)$
+  $math$
+$endif$
+</head>
+<body>
+
+<div class="page-layout">
+
+$if(toc)$
+  <nav class="toc-sidebar" aria-label="Table of contents">
+    <button class="toc-toggle" aria-expanded="true" aria-controls="toc-list">
+      <span class="toc-toggle-text">Contents</span>
+      <span class="toc-chevron">▾</span>
+    </button>
+    <div class="toc-list" id="toc-list">
+      $table-of-contents$
+    </div>
+  </nav>
+$endif$
+
+  <article>
+    <header id="article-header">
+$if(title)$
+      <h1 class="article-title">$title$</h1>
+$endif$
+$if(author)$
+      <div class="article-byline">
+        <span class="article-author">$for(author)$$author$$sep$, $endfor$</span>
+$if(date)$
+        <span class="article-date">$date$</span>
+$endif$
+      </div>
+$endif$
+    </header>
+
+    $body$
+
+  </article>
+</div>
+
+<script>
+(function () {
+  // --- Citation hover tooltips ---
+  document.querySelectorAll('.citation[data-cites]').forEach(function (cite) {
+    var keys = cite.getAttribute('data-cites').split(/\s+/);
+    var entries = keys.map(function (k) {
+      var el = document.getElementById('ref-' + k);
+      return el || null;
+    }).filter(Boolean);
+    if (!entries.length) return;
+
+    var tip = document.createElement('div');
+    tip.className = 'citation-tooltip';
+    entries.forEach(function (el) {
+      var s = document.createElement('div');
+      s.innerHTML = el.innerHTML;
+      // collapse newlines/whitespace in text nodes
+      (function norm(node) {
+        node.childNodes.forEach(function(c) {
+          if (c.nodeType === 3) c.textContent = c.textContent.replace(/\s+/g, ' ');
+          else norm(c);
+        });
+      })(s);
+      tip.appendChild(s);
+    });
+    document.body.appendChild(tip);
+
+    var hideTimer = null;
+    function showTip() {
+      clearTimeout(hideTimer);
+      tip.style.display = 'block';
+      requestAnimationFrame(function () {
+        var r = cite.getBoundingClientRect();
+        var top = r.top + window.scrollY - tip.offsetHeight - 10;
+        var left = r.left + window.scrollX;
+        if (left + tip.offsetWidth > window.innerWidth - 16)
+          left = window.innerWidth - tip.offsetWidth - 16;
+        if (left < 8) left = 8;
+        if (top < window.scrollY + 8) top = r.bottom + window.scrollY + 8;
+        tip.style.top = top + 'px';
+        tip.style.left = left + 'px';
+      });
+    }
+    function hideTip() {
+      hideTimer = setTimeout(function () { tip.style.display = 'none'; }, 120);
+    }
+
+    cite.addEventListener('mouseenter', showTip);
+    cite.addEventListener('mouseleave', hideTip);
+    tip.addEventListener('mouseenter', function () { clearTimeout(hideTimer); });
+    tip.addEventListener('mouseleave', hideTip);
+  });
+
+  // --- TOC collapse toggle ---
+  var tocToggle = document.querySelector('.toc-toggle');
+  var tocSidebar = document.querySelector('.toc-sidebar');
+  if (tocToggle && tocSidebar) {
+    tocToggle.addEventListener('click', function () {
+      var collapsed = tocSidebar.classList.toggle('collapsed');
+      tocToggle.setAttribute('aria-expanded', String(!collapsed));
+    });
+  }
+
+  // --- TOC active-section tracking on scroll ---
+  var tocLinks = Array.from(document.querySelectorAll('.toc-sidebar a'));
+  var allHeadings = Array.from(document.querySelectorAll('article h1[id], article h2[id], article h3[id], article h4[id]'));
+  if (allHeadings.length && tocLinks.length) {
+    // Map every heading id → nearest ancestor id that has a TOC entry
+    var tocIds = new Set(tocLinks.map(function(a) { return a.getAttribute('href').slice(1); }));
+    var lastTocId = '';
+    var headingToToc = {};
+    allHeadings.forEach(function(h) {
+      if (tocIds.has(h.id)) lastTocId = h.id;
+      headingToToc[h.id] = lastTocId;
+    });
+    function updateToc() {
+      var scrollY = window.scrollY + 100;
+      var current = allHeadings[0] ? allHeadings[0].id : '';
+      allHeadings.forEach(function(h) {
+        if (h.offsetTop <= scrollY) current = h.id;
+      });
+      var active = headingToToc[current] || current;
+      tocLinks.forEach(function(a) {
+        a.classList.toggle('active', a.getAttribute('href') === '#' + active);
+      });
+    }
+    window.addEventListener('scroll', updateToc, { passive: true });
+    updateToc();
+  }
+})();
+</script>
+
+</body>
+</html>

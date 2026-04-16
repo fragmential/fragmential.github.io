@@ -1,0 +1,4 @@
+#!/bin/bash
+pandoc main.tex -s -o index.html --katex --citeproc \
+  --bibliography citations.bib --template template.html \
+  --toc --toc-depth 1

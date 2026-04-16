@@ -1,0 +1,461 @@
+/* ============================================================
+   Distill-inspired article stylesheet
+   ============================================================ */
+
+/* --- Reset & base ----------------------------------------- */
+*, *::before, *::after { box-sizing: border-box; }
+
+html {
+  font-size: 16px;
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background: #fff;
+  color: #1a1a1a;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* --- Page layout: 3-column grid, article always centered -- */
+/*
+ * [  1fr  ] [ min(680px, 100%)  ] [  1fr  ]
+ *   ↑ TOC lives here, right-aligned      ↑ empty mirror
+ */
+.page-layout {
+  display: grid;
+  grid-template-columns: 1fr min(680px, 100%) 1fr;
+  padding: 0 1.5rem;
+}
+
+/* --- Article: middle column ------------------------------- */
+article {
+  grid-column: 2;
+  min-width: 0;
+  padding: 3.5rem 1rem 5rem;
+}
+
+/* --- TOC: left column, sticky ----------------------------- */
+.toc-sidebar {
+  grid-column: 1;
+  justify-self: end;
+  align-self: start;
+  position: sticky;
+  top: 3rem;
+  width: 180px;
+  padding-right: 1.5rem; /* gap between TOC and article */
+  display: flex;
+  flex-direction: column;
+  z-index: 10;
+}
+
+/* Hide TOC when the left column is too narrow to hold it */
+@media (max-width: 1120px) {
+  .toc-sidebar { display: none; }
+}
+
+/* --- TOC toggle button ------------------------------------ */
+.toc-toggle {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #aaa;
+  font-family: inherit;
+  margin-bottom: 0.7rem;
+  flex-shrink: 0;
+}
+
+.toc-toggle:hover {
+  color: #555;
+}
+
+.toc-toggle-text {
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  /* slide-left + fade on collapse */
+  display: inline-block;
+  overflow: hidden;
+  max-width: 120px;
+  white-space: nowrap;
+  opacity: 1;
+  transform: translateX(0);
+  transition: max-width 0.18s ease, opacity 0.15s ease, transform 0.18s ease;
+}
+
+.toc-chevron {
+  font-size: 0.85rem;
+  line-height: 1;
+  transition: transform 0.18s ease, font-size 0.18s ease, color 0.15s;
+}
+
+/* --- Collapsed state -------------------------------------- */
+
+/* Contents label: slide left and fade out */
+.toc-sidebar.collapsed .toc-toggle-text {
+  max-width: 0;
+  opacity: 0;
+  transform: translateX(-10px);
+}
+
+/* Chevron: rotate to point right */
+.toc-sidebar.collapsed .toc-chevron {
+  transform: rotate(-90deg);
+  font-size: 1.1rem;
+  color: #bbb;
+}
+
+.toc-sidebar.collapsed .toc-toggle:hover .toc-chevron {
+  color: #555;
+}
+
+/* TOC list: fade out, then hide from pointer events */
+.toc-list {
+  overflow-y: auto;
+  max-height: calc(100vh - 6rem);
+  font-size: 0.78rem;
+  line-height: 1.5;
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.18s ease, visibility 0.18s ease;
+}
+
+.toc-sidebar.collapsed .toc-list {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.toc-list ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.toc-list li {
+  margin: 0;
+}
+
+.toc-list a {
+  display: block;
+  color: #888;
+  text-decoration: none;
+  padding: 0.2rem 0.5rem;
+  border-left: 2px solid transparent;
+  border-radius: 0 2px 2px 0;
+  transition: color 0.12s, border-color 0.12s;
+}
+
+.toc-list a:hover {
+  color: #333;
+  border-left-color: #ccc;
+}
+
+.toc-list a.active {
+  color: #111;
+  border-left-color: #111;
+  font-weight: 500;
+}
+
+/* Nested subsections */
+.toc-list li li a {
+  font-size: 0.74rem;
+  padding-left: 1rem;
+  color: #aaa;
+}
+
+.toc-list li li a:hover,
+.toc-list li li a.active {
+  color: #555;
+  border-left-color: #aaa;
+}
+
+/* --- Article header / title block ------------------------- */
+#article-header {
+  margin-bottom: 2.8rem;
+  padding-bottom: 1.6rem;
+  border-bottom: 2px solid #f0f0f0;
+}
+
+.article-title {
+  font-size: 1.95rem;
+  font-weight: 700;
+  line-height: 1.2;
+  margin: 0 0 0.7rem;
+  color: #111;
+  letter-spacing: -0.02em;
+}
+
+/* \textbf inside the title is redundant — strip extra weight */
+.article-title strong {
+  font-weight: inherit;
+}
+
+.article-byline {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.article-author {
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: #444;
+}
+
+.article-date {
+  font-size: 0.85rem;
+  color: #aaa;
+}
+
+/* --- Section headings ------------------------------------- */
+h1, h2, h3, h4 {
+  color: #111;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+/* \section → h1 */
+h1 {
+  font-size: 1.55rem;
+  margin: 2.8rem 0 0.8rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid #ececec;
+  letter-spacing: -0.01em;
+}
+
+h1:first-of-type {
+  margin-top: 0;
+  border-top: none;
+  padding-top: 0;
+}
+
+/* \subsection → h2 */
+h2 {
+  font-size: 1.15rem;
+  margin: 2rem 0 0.6rem;
+}
+
+/* \subsubsection → h3 */
+h3 {
+  font-size: 1rem;
+  margin: 1.5rem 0 0.4rem;
+}
+
+/* \paragraph → h4: small bold label */
+h4 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #333;
+  margin: 1.3rem 0 0.15rem;
+}
+
+/* --- Body text -------------------------------------------- */
+p {
+  margin: 0 0 1rem;
+}
+
+/* --- Math ------------------------------------------------- */
+.math.display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.25rem 0;
+}
+
+.katex-display {
+  margin: 1.1rem 0 !important;
+}
+
+/* --- Lists ------------------------------------------------ */
+ul, ol {
+  padding-left: 1.6rem;
+  margin: 0.4rem 0 1rem;
+}
+
+li {
+  margin-bottom: 0.25rem;
+}
+
+li > p {
+  margin-bottom: 0.25rem;
+}
+
+/* --- Inline code & code blocks ---------------------------- */
+code {
+  font-family: 'Menlo', 'Monaco', 'Consolas', 'Liberation Mono', monospace;
+  font-size: 0.84em;
+  background: #f4f4f4;
+  border-radius: 3px;
+  padding: 0.1em 0.35em;
+}
+
+pre {
+  background: #f4f4f4;
+  border-radius: 6px;
+  padding: 1rem 1.2rem;
+  overflow-x: auto;
+  margin: 1.2rem 0;
+  font-size: 0.875rem;
+}
+
+pre > code {
+  background: none;
+  padding: 0;
+  font-size: inherit;
+}
+
+/* --- Tables ----------------------------------------------- */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+  margin: 1.4rem 0;
+}
+
+thead th {
+  text-align: left;
+  font-weight: 600;
+  border-top: 2px solid #1a1a1a;
+  border-bottom: 1px solid #1a1a1a;
+  padding: 0.45rem 0.8rem;
+}
+
+tbody td {
+  padding: 0.4rem 0.8rem;
+  border-bottom: 1px solid #ececec;
+}
+
+tbody tr:last-child td {
+  border-bottom: 2px solid #1a1a1a;
+}
+
+caption {
+  caption-side: top;
+  text-align: left;
+  font-size: 0.83rem;
+  color: #777;
+  margin-bottom: 0.5rem;
+  font-style: italic;
+}
+
+/* --- Links ------------------------------------------------ */
+a {
+  color: #2563eb;
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+/* --- Citations -------------------------------------------- */
+.citation {
+  cursor: help;
+  border-bottom: 1px dotted #999;
+}
+
+/* --- Citation tooltip ------------------------------------- */
+.citation-tooltip {
+  display: none;
+  position: absolute;
+  z-index: 200;
+  max-width: 380px;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  padding: 0.65rem 0.85rem;
+  font-size: 0.78rem;
+  line-height: 1.55;
+  color: #333;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+}
+
+.citation-tooltip div + div {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid #eee;
+}
+
+/* --- References section ----------------------------------- */
+#refs {
+  margin-top: 3rem;
+  padding-top: 0.5rem;
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+
+#refs::before {
+  content: 'References';
+  display: block;
+  font-size: 1.55rem;
+  font-weight: 600;
+  color: #111;
+  letter-spacing: -0.01em;
+  padding-bottom: 0.8rem;
+  border-top: 1px solid #ececec;
+  padding-top: 0.5rem;
+  margin-bottom: 1.2rem;
+}
+
+.csl-bib-body {
+  text-indent: 0 !important;
+}
+
+.csl-entry {
+  margin-bottom: 0.9rem;
+  padding-left: 1.4rem;
+  text-indent: -1.4rem;
+  color: #444;
+}
+
+.csl-entry a {
+  color: #777;
+  word-break: break-all;
+}
+
+.csl-entry a:hover {
+  color: #2563eb;
+}
+
+/* --- Blockquote ------------------------------------------- */
+blockquote {
+  margin: 1rem 0;
+  padding: 0.5rem 1.1rem;
+  border-left: 3px solid #e0e0e0;
+  color: #555;
+  font-style: italic;
+}
+
+/* --- Figures ---------------------------------------------- */
+figure {
+  margin: 1.5rem 0;
+  text-align: center;
+}
+
+figure img {
+  max-width: 100%;
+}
+
+figcaption {
+  font-size: 0.83rem;
+  color: #777;
+  margin-top: 0.5rem;
+  font-style: italic;
+  text-align: left;
+}
+
+/* --- Print ------------------------------------------------ */
+@media print {
+  .toc-sidebar { display: none; }
+  .citation-tooltip { display: none !important; }
+  body { font-size: 11pt; }
+  a { color: inherit; text-decoration: none; }
+}
