@@ -78,8 +78,7 @@ This captures both the direction of the mean activation and the spread around it
   \hat{\bm{\Sigma}}_A = \bm{\Sigma}_A - \bm{\mu}\bm{\mu}^\top, \qquad \bm{\mu} = \frac{1}{N}\sum_{i=1}^N \mathbf{x}_i.
 \end{equation}
 
-The difference matters.
-If the mean is large, the uncentered covariance will be dominated by one direction, even if the actual variation is distributed across dimensions.
+The difference between centered and uncentered covariance matters. Namely, If the mean is large, the uncentered covariance will be dominated by one direction, even if the actual variation is distributed across dimensions.
 
 We eigendecompose $\hat{\bm{\Sigma}}_A = \mathbf{V}\bm{\Lambda}\mathbf{V}^\top$, giving eigenvalues $\lambda_1 \ge \lambda_2 \ge \cdots \ge \lambda_d \ge 0$.
 The sorted $\lambda$ together make up the \emph{eigenspectrum}, which is the central object of this analysis.
@@ -156,11 +155,11 @@ A larger log-determinant indicates stronger curvature around that layer's weight
 
 % We also examine the joint eigenspectrum directly: the top-20,000 products $\lambda^A_i \lambda^G_j$ sorted in descending order, which shows which input-output direction pairs dominate the curvature.
 
-\subsection{Mean energy fraction}
+\subsection{Mean fraction of total energy}
 
 Although RankMe measures the signal around the mean. The weights along with approximations of their curvature depend on the uncentered covariance. To quantify the potential influence of the mean, we track the mean vector $\bm{\mu}$ of the activations alongside the other spectral metrics. When the mean of the activations is large, the distinction between centered and uncentered covariance becomes important.
 
-We track how much of the total signal energy sits in the mean versus the variation around it:
+We track how much of the total signal energy — that is: the uncentered covariance — sits in the mean versus the variation around it:
 \begin{equation}
   \rho_\mu = \frac{\|\bm{\mu}\|^2}{\tr(\bm{\Sigma}_A)}.
 \end{equation}
