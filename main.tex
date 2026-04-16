@@ -51,6 +51,7 @@ Various quantities we use are:
   \item \textbf{$\alpha$-ReQ}: how quickly the eigenvalue spectrum decays — the power-law exponent.
   \item \textbf{K-FAC log-determinant}: a measure of how curved the loss landscape is near each layer's weights. Specifically: the \emph{log-volume} of the curvature.
   \item \textbf{Mean fraction of total energy}: how much of the uncentered covariance is attributed to the mean of the data.
+  \item \textbf{Mean alignment with covariance}: how much the mean lies in the same direction as the uncentered covariance.
 \end{enumerate}
 
 The specifics of each will be elaborated on in Section~\ref{sec:metrics}.
@@ -227,9 +228,9 @@ When capturing only the final token, it is economical to store the activation em
 
 Covariance matrices are accumulated in \texttt{float64} for numerical stability after millions of accumulations; activations are cast from lower precision to \texttt{float32} before forming outer products.
 
-% =========================================================
-\section{Experiments}
-% =========================================================
+% % =========================================================
+% \section{Experiments}
+% % =========================================================
 
 % \subsection{Final residual stream}
 
