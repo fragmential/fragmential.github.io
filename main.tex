@@ -34,9 +34,9 @@ A more revealing approach is to look at the \emph{activations}: the vectors that
 If we collect enough of these vectors, we can ask what their distribution looks like and how that distribution changes over the course of training.
 
 This post describes a set of experiments that do exactly that.
-We collect covariance matrices of activations (and gradients) at specific locations inside the network, decompose them into principal components, and track the resulting spectra from random initialisation through to convergence.
+We collect covariance matrices of activations (and gradients) at specific locations inside the network, decompose them into eigenvectors and eigenvalues, and track the resulting eigenvalue spectra from random initialisation through to convergence.
 
-I was inspired by the work of \citet{li2025tracing}, who traced the Entropy of the covariance of final tokens of documents. In this post, we reproduce their work and dig deeper into the training dynamics that cause the macroscopic changes we see.
+I was inspired by the work of \citet{li2025tracing}, who traced the Entropy of the covariance of final tokens of documents. In this post, we reproduce their work and dig deeper into the training dynamics that cause the macroscopic changes we see. For using K-FAC to estimate curvature in language models, I was inspired by \citet{merullo2025memorization}.
 
 We work with two families of open-weight language models:
 \begin{itemize}
@@ -45,12 +45,15 @@ We work with two families of open-weight language models:
 \end{itemize}
 
 Both families release intermediate checkpoints, which is what makes this kind of analysis possible.
-We track three main quantities:
+Various quantities we use are:
 \begin{enumerate}
-  \item \textbf{RankMe}: how many dimensions of the representation space are actually being used.
-  \item \textbf{$\alpha$-ReQ}: how quickly the less important dimensions fall off (the power-law exponent).
-  \item \textbf{K-FAC log-determinant}: a measure of how curved the loss landscape is near each layer's weights.
+  \item \textbf{RankMe}: roughly how many directions of the representation space are being occupied by the data.
+  \item \textbf{$\alpha$-ReQ}: how quickly the eigenvalue spectrum decays — the power-law exponent.
+  \item \textbf{K-FAC log-determinant}: a measure of how curved the loss landscape is near each layer's weights. Specifically: the \emph{log-volume} of the curvature.
+  \item \textbf{Mean fraction of total energy}: how much of the uncentered covariance is attributed to the mean of the data.
 \end{enumerate}
+
+The specifics of each will be elaborated on in Section~\ref{sec:metrics}.
 
 % =========================================================
 \section{Background: covariance matrices and their spectra}
@@ -101,7 +104,7 @@ To collect $\bm{\Sigma}_G$ we use \emph{sampled labels}: we sample from the mode
 This gives an unbiased estimate of the Fisher information.
 
 % =========================================================
-\section{Metrics}
+\section{Metrics}\label{sec:metrics}
 % =========================================================
 
 \subsection{RankMe: how many dimensions are being used?}
@@ -115,6 +118,8 @@ RankMe \citep{garrido2023rankme} quantifies where a representation sits between 
 \end{equation}
 The result is always between 1 and $d$.
 Values near 1 indicate that one eigenvalue dominates; values near $d$ indicate a roughly uniform spectrum.
+
+The eigenvalues $\lambda_i$ are conventionally the eigenvalues of the centered covariance. We follow this convention unless otherwise stated.
 
 The original RankMe paper normalises by singular values $\sigma_i = \sqrt{\lambda_i}$ rather than eigenvalues, which gives slightly different results.
 We compute both, but to remain consistent with \citet{li2025tracing}, we focus on the eigenvalue RankMe.
@@ -134,11 +139,27 @@ We fit $\alpha$ by weighted least-squares following \citet{stringer2019highdimen
 \begin{equation}
   \hat\alpha = \argmin_\alpha \sum_{i} \frac{1}{i} \bigl(\log\lambda_i + \alpha\log i - \log C\bigr)^2.
 \end{equation}
-$R^2$ is reported as a quality-of-fit indicator.
+% $R^2$ is reported as a quality-of-fit indicator.
+
+\subsection{K-FAC log-determinant}
+
+Under Kronecker-factored Approximate Curvature (K-FAC) Fisher $\mathbf{F}_{\mathbf{W}}$ is approximated as $\bm{\Sigma}_G \kron \bm{\Sigma}_A$, the eigenvalues of the full matrix for a weight $\mathbf{W}$ are the pairwise products $\{\lambda^G_j \lambda^A_i\}$.
+A useful scalar summary is the log-determinant, which measures the log-volume of the curvature ellipsoid.
+
+To maintain numerical stability for logs of near-zero eigenvalues. We compute a damped version, adding a small diagonal term proportional to the trace to avoid numerical issues near zero:
+\begin{equation}
+  \mathcal{L} = d_\text{in} \cdot \log\det(\bm{\Sigma}_G + \varepsilon_G \mathbf{I}) + d_\text{out} \cdot \log\det(\bm{\Sigma}_A + \varepsilon_A \mathbf{I}),
+\end{equation}
+where $\varepsilon_G = \alpha \cdot \tr(\bm{\Sigma}_G)/d_\text{out}$ and $\varepsilon_A = \alpha \cdot \tr(\bm{\Sigma}_A)/d_\text{in}$ (with $\alpha = 10^{-6}$).
+
+A larger log-determinant indicates stronger curvature around that layer's weights.
+
+% We also examine the joint eigenspectrum directly: the top-20,000 products $\lambda^A_i \lambda^G_j$ sorted in descending order, which shows which input-output direction pairs dominate the curvature.
 
 \subsection{Mean energy fraction}
 
-When activations have a large mean, the distinction between centered and uncentered covariance becomes important.
+Although RankMe measures the signal around the mean. The weights along with approximations of their curvature depend on the uncentered covariance. To quantify the potential influence of the mean, we track the mean vector $\bm{\mu}$ of the activations alongside the other spectral metrics. When the mean of the activations is large, the distinction between centered and uncentered covariance becomes important.
+
 We track how much of the total signal energy sits in the mean versus the variation around it:
 \begin{equation}
   \rho_\mu = \frac{\|\bm{\mu}\|^2}{\tr(\bm{\Sigma}_A)}.
@@ -147,19 +168,7 @@ When $\rho_\mu$ is close to 1, nearly all the energy is in the mean (the activat
 When $\rho_\mu$ is close to 0, the mean is negligible.
 % This matters particularly for OLMo-2, where RMSNorm constrains the scale of activations and tends to inflate $\rho_\mu$.
 
-\subsection{K-FAC log-determinant}
-
-Since the Fisher $\mathbf{F}_{\mathbf{W}}$ factorises as $\bm{\Sigma}_G \kron \bm{\Sigma}_A$, the eigenvalues of the full curvature matrix for a weight $\mathbf{W}$ are the pairwise products $\{\lambda^G_j \lambda^A_i\}$.
-A useful scalar summary is the log-determinant, which measures the log-volume of the curvature ellipsoid.
-
-We compute a damped version, adding a small diagonal term proportional to the trace to avoid numerical issues near zero:
-\begin{equation}
-  \mathcal{L} = d_\text{in} \cdot \log\det(\bm{\Sigma}_G + \varepsilon_G \mathbf{I}) + d_\text{out} \cdot \log\det(\bm{\Sigma}_A + \varepsilon_A \mathbf{I}),
-\end{equation}
-where $\varepsilon_G = \alpha \cdot \tr(\bm{\Sigma}_G)/d_\text{out}$ and $\varepsilon_A = \alpha \cdot \tr(\bm{\Sigma}_A)/d_\text{in}$ (with $\alpha = 10^{-6}$).
-A larger log-determinant indicates stronger curvature around that layer's weights.
-
-We also examine the joint eigenspectrum directly: the top-20,000 products $\lambda^A_i \lambda^G_j$ sorted in descending order, which shows which input-output direction pairs dominate the curvature.
+% \subsection{TODO: Hutchinson trace estimator}
 
 % \subsection{Generalised eigendecomposition}
 
@@ -182,24 +191,25 @@ We also examine the joint eigenspectrum directly: the top-20,000 products $\lamb
   \label{tab:models}
   \begin{tabular}{llcc}
     \toprule
-    Family & Architecture & Sizes & Dataset \\
+    Family & Architecture & Sizes we study & Pretraining Set \\
     \midrule
-    Pythia & GPT-NeoX & 14M--12B & Pile (deduped) \\
+    Pythia & GPT-NeoX & 1B, 7B & The Pile deduped \\
     OLMo-2 & LLaMA-style & 1B, 7B & OLMo-Mix \\
     \bottomrule
   \end{tabular}
 \end{table}
 
-Pythia provides up to 143,000 training steps' worth of checkpoints, densely spaced early on (steps 0, 8, 16, 32, 64, \dots) and every 1,000 steps after that.
-We subsample up to 50 checkpoints per model.
+Both models provide densely logarithmically spaced checkpoints at the beginning, and constantly spaced checkpoints after that.
+
+For both models we sample all densely spaced early checkpoints, and then 20 square-root spaced checkpoints. Resulting in collecting between and 27 and 36 checkpoints across the four models we measure.
 
 \subsection{Where in the network do we collect?}
 
 We hook into three locations:
 
 \paragraph{Final residual stream.}
-The vector that feeds into the unembedding head, captured after the final layer norm.
-This is the model's overall output representation.
+The vector that feeds into the unembedding head, captured before and after the final layer norm.
+This is the model's final embedding representation for the predicted token. When hooking only after the final norm.
 
 \paragraph{MLP projections.}
 Inside each transformer block, the MLP contains two or three weight matrices.
@@ -208,60 +218,59 @@ We collect activation covariances at the input and output of each projection, an
 
 \subsection{Data}
 
-For residual-stream experiments we process 5,000 sequences (roughly 2.5M tokens at sequence length 512).
-For covariance experiments we use a byte budget of 40--80\,MB of text instead of a fixed sequence count.
-This keeps the number of tokens comparable across model families, since OLMo-Mix documents tend to be longer than Pile documents.
+To reproduce the RankMe experiments of \citet{li2025tracing}, we process 5,000 padded sequences between 32 and 512 tokens long from the fineweb dataset. We then sample the final token of each sequence, giving one representation that summarises the sequence.
 
-We use each model's training distribution (Pile for Pythia, OLMo-Mix for OLMo-2) and also FineWeb as a held-out distribution, to check whether the spectral properties generalise beyond the training data.
+For our other experiments we sample 6 million tokens (~45.8MB) from packed and shuffled chunks of the respective pretraining mixes of the models. Measuring all but the first 32 tokens for each chunk. Sampling the full token sequence lets us accumulate vastly more sampled gradients economically.
 
-\subsection{Numerical precision}
+\subsection{Accumulation}
 
-Covariance matrices are accumulated in \texttt{float64} for numerical stability; activations are cast to \texttt{float32} before forming outer products.
-Only the top-$k$ eigenpairs are stored per checkpoint to keep disk usage manageable.
+When capturing only the final token, it is economical to store the activation embeddings themselves, but this quickly becomes infeasible when collecting millions of tokens instead of thousands. To do this, we accumulate covariance matrices by summing the rank one projections of the activations. Storing a matrix of size $d \times d$ where d is the embedding dimension at that hook. This can be cheap in the residual stream. But inside MLPs, the embedding dimension is often 4 times the residual's dimension, presenting a tricky storage-compute dilemma if experiments need to be recomputed.
+
+Covariance matrices are accumulated in \texttt{float64} for numerical stability after millions of accumulations; activations are cast from lower precision to \texttt{float32} before forming outer products.
 
 % =========================================================
-\section{The experiments}
+\section{Experiments}
 % =========================================================
 
-\subsection{Final residual stream}
+% \subsection{Final residual stream}
 
-The most basic question is how the final output representation changes shape over training.
-We track RankMe, trace (total signal energy), and mean norm across all checkpoints, comparing:
-\begin{itemize}
-  \item Centered vs.\ uncentered covariance (does the mean carry most of the energy?).
-  \item Training set vs.\ FineWeb (are these properties distribution-specific?).
-  \item Before vs.\ after the final layer norm (how much does normalisation change the geometry?).
-\end{itemize}
+% The most basic question is how the final output representation changes shape over training.
+% We track RankMe, trace (total signal energy), and mean norm across all checkpoints, comparing:
+% \begin{itemize}
+%   \item Centered vs.\ uncentered covariance (does the mean carry most of the energy?).
+%   \item Training set vs.\ FineWeb (are these properties distribution-specific?).
+%   \item Before vs.\ after the final layer norm (how much does normalisation change the geometry?).
+% \end{itemize}
 
-The main models are Pythia-1B, Pythia-6.9B, OLMo-2-1B, and OLMo-2-7B.
+% The main models are Pythia-1B, Pythia-6.9B, OLMo-2-1B, and OLMo-2-7B.
 
-\subsection{K-FAC in late layers}
+% \subsection{K-FAC}
 
-We focus on late-layer MLP projections (layer 15 for 1B models, layer 23 for 7B), where the gradient signal tends to be strongest and most structured.
-For each we plot trace, log-determinant, RankMe, and peak eigenvalue of $\bm{\Sigma}_A$, $\bm{\Sigma}_G$, and the joint K-FAC spectrum.
+% We focus on late-layer MLP projections (layer 15 for 1B models, layer 23 for 7B), where the gradient signal tends to be strongest and most structured.
+% For each we plot trace, log-determinant, RankMe, and peak eigenvalue of $\bm{\Sigma}_A$, $\bm{\Sigma}_G$, and the joint K-FAC spectrum.
 
-\subsection{MLP inputs and outputs across all layers}
+% \subsection{Behaviour of MLP layers}
 
-We sweep across all blocks and study the spectral properties at each stage of the MLP:
-\begin{itemize}
-  \item Up/gate projection inputs: the residual stream entering the block.
-  \item Up/gate projection outputs: the post-nonlinearity features (GELU or SiLU).
-  \item Down-projection inputs: the combined gate $\times$ up features (OLMo-2) or the GELU output (Pythia).
-  \item Down-projection outputs: the MLP's contribution back to the residual stream.
-\end{itemize}
+% We sweep across all blocks and study the spectral properties at each stage of the MLP:
+% \begin{itemize}
+%   \item Up/gate projection inputs: the residual stream entering the block.
+%   \item Up/gate projection outputs: the post-nonlinearity features (GELU or SiLU).
+%   \item Down-projection inputs: the combined gate $\times$ up features (OLMo-2) or the GELU output (Pythia).
+%   \item Down-projection outputs: the MLP's contribution back to the residual stream.
+% \end{itemize}
 
-For each of these we report log-det, peak eigenvalue, RankMe, mean fraction $\rho_\mu$, and the full eigenvalue histogram.
+% For each of these we report log-det, peak eigenvalue, RankMe, mean fraction $\rho_\mu$, and the full eigenvalue histogram.
 
-\subsection{Gradient covariances}
+% \subsection{Gradient covariances}
 
-Using sampled-label backpropagation we collect $\bm{\Sigma}_G$ at all MLP projections.
-This allows us to study the full K-FAC structure by combining activation covariances from one projection with gradient covariances from another, forming the joint curvature spectrum.
-We also produce layer-wise heatmaps of $\alpha$ and RankMe to see whether layers specialise differently over training.
+% Using sampled-label backpropagation we collect $\bm{\Sigma}_G$ at all MLP projections.
+% This allows us to study the full K-FAC structure by combining activation covariances from one projection with gradient covariances from another, forming the joint curvature spectrum.
+% We also produce layer-wise heatmaps of $\alpha$ and RankMe to see whether layers specialise differently over training.
 
-\subsection{Residual stream gradients}
+% \subsection{Residual stream gradients}
 
-We also collect gradient covariances at the final residual stream.
-This shows how the gradient signal reaching the output changes over training, and how it interacts with the final layer norm.
+% We also collect gradient covariances at the final residual stream.
+% This shows how the gradient signal reaching the output changes over training, and how it interacts with the final layer norm.
 
 % =========================================================
 \bibliographystyle{plainnat}
