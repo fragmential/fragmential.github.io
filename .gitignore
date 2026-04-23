@@ -9,3 +9,6 @@ index.html
 *.pdf
 *.log
 *.gz
+!attachments/**/*.pdf
+attachments/**.svg
+attachments/cropped/

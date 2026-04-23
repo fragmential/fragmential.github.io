@@ -38,6 +38,12 @@ article {
   padding: 3.5rem 1rem 5rem;
 }
 
+article > *:not(figure) {
+  position: relative;
+  z-index: 20;
+}
+
+
 /* --- TOC: left column, sticky ----------------------------- */
 .toc-sidebar {
   grid-column: 1;
@@ -50,6 +56,28 @@ article {
   display: flex;
   flex-direction: column;
   z-index: 10;
+  padding-left: 0.5rem;
+  padding-top: 0.5rem;
+  padding-bottom: 0.5rem;
+  /* background: rgba(255, 255, 255, 0.85);
+  border-radius: 8px; */
+}
+
+.toc-sidebar::before {
+  content: '';
+  position: absolute;
+  inset: -2rem;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.97);
+  z-index: -1;
+  mask-image:
+    linear-gradient(to right,  transparent, black 2rem, black calc(100% - 2rem), transparent),
+    linear-gradient(to bottom, transparent, black 2rem, black calc(100% - 2rem), transparent);
+  mask-composite: intersect;
+  -webkit-mask-image:
+    linear-gradient(to right,  transparent, black 2rem, black calc(100% - 2rem), transparent),
+    linear-gradient(to bottom, transparent, black 2rem, black calc(100% - 2rem), transparent);
+  -webkit-mask-composite: source-in;
 }
 
 /* Hide TOC when the left column is too narrow to hold it */
@@ -129,6 +157,16 @@ article {
 }
 
 .toc-sidebar.collapsed .toc-list {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.toc-sidebar.collapsed {
+  z-index: 1;
+  transition: opacity 0.2s ease;
+}
+
+.toc-sidebar.collapsed::before {
   opacity: 0;
   visibility: hidden;
 }
@@ -241,13 +279,16 @@ h1:first-of-type {
 /* \subsection → h2 */
 h2 {
   font-size: 1.15rem;
-  margin: 2rem 0 0.6rem;
+  margin: 2.8rem 0 0.6rem;
 }
 
-/* \subsubsection → h3 */
+/* \subsubsection → h3 — research question box in "What's next?" */
 h3 {
   font-size: 1rem;
-  margin: 1.5rem 0 0.4rem;
+  margin: 2.2rem 0 0.9rem;
+  background-color: rgb(243, 246, 250);
+  padding: 1.35em 1.55em;
+  border-radius: 6px;
 }
 
 /* \paragraph → h4: small bold label */
@@ -277,15 +318,15 @@ p {
 /* --- Lists ------------------------------------------------ */
 ul, ol {
   padding-left: 1.6rem;
-  margin: 0.4rem 0 1rem;
+  margin: 0.65rem 0 1.25rem;
 }
 
 li {
-  margin-bottom: 0.25rem;
+  margin-bottom: 0.95rem;
 }
 
 li > p {
-  margin-bottom: 0.25rem;
+  margin-bottom: 0.35rem;
 }
 
 /* --- Inline code & code blocks ---------------------------- */
@@ -384,6 +425,265 @@ a:hover {
   border-top: 1px solid #eee;
 }
 
+/* --- Footnotes (LessWrong-style hover popups) ------------- */
+.footnote-ref {
+  text-decoration: none;
+  color: #4a7c8a;
+  font-weight: 500;
+  padding: 0 1px;
+  border-radius: 2px;
+  transition: background-color 0.15s ease;
+}
+.footnote-ref:hover,
+.footnote-ref.is-active {
+  color: #2a5c6a;
+}
+.footnote-ref sup {
+  font-size: 0.75em;
+}
+
+.footnote-tooltip {
+  display: none;
+  position: absolute;
+  z-index: 200;
+  max-width: 380px;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  padding: 0.65rem 0.85rem;
+  font-size: 0.85rem;
+  line-height: 1.55;
+  color: #333;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+}
+.footnote-tooltip p {
+  margin: 0;
+}
+.footnote-tooltip p + p {
+  margin-top: 0.5rem;
+}
+/* hide the "back to text" arrow inside tooltip / sidenote */
+.footnote-tooltip .footnote-back,
+.footnote-tooltip a[role="doc-backlink"],
+.footnote-sidenote .footnote-back,
+.footnote-sidenote a[role="doc-backlink"] {
+  display: none;
+}
+
+/* --- Footnotes section at bottom of article --------------- */
+section.footnotes,
+.footnotes {
+  margin-top: 3rem;
+  padding-top: 0.5rem;
+  font-size: 0.875rem;
+  line-height: 1.6;
+  color: #444;
+}
+section.footnotes::before,
+.footnotes::before {
+  content: 'Footnotes';
+  display: block;
+  font-size: 1.55rem;
+  font-weight: 600;
+  color: #888;
+  letter-spacing: -0.01em;
+  padding-bottom: 0.8rem;
+  border-top: 1px solid #ececec;
+  padding-top: 0.5rem;
+  margin-bottom: 1.2rem;
+}
+/* Hide pandoc's default <hr /> separator — the ::before border replaces it */
+section.footnotes > hr,
+.footnotes > hr {
+  display: none;
+}
+section.footnotes ol,
+.footnotes ol {
+  padding-left: 1.2rem;
+}
+section.footnotes li + li,
+.footnotes li + li {
+  margin-top: 0.5rem;
+}
+section.footnotes .footnote-back,
+section.footnotes a[role="doc-backlink"],
+.footnotes .footnote-back,
+.footnotes a[role="doc-backlink"] {
+  margin-left: 0.35em;
+}
+
+/* --- Weboptional: styled like a subsection heading (no box) - */
+details.weboptional {
+  display: block;
+  width: 100%;
+  background: none;
+  padding: 0;
+  margin: 2rem 0 0.6rem;
+}
+details.weboptional > summary {
+  position: relative;
+  display: block;
+  cursor: pointer;
+  user-select: none;
+  /* match h2 (\subsection) appearance */
+  color: #111;
+  font-size: 1.15rem;
+  font-weight: 600;
+  line-height: 1.25;
+  list-style: none;
+  padding: 0;
+}
+details.weboptional > summary::-webkit-details-marker {
+  display: none;
+}
+details.weboptional > summary::before {
+  content: '▸';
+  position: absolute;
+  left: -1.05em;
+  color: #888;
+  font-size: 0.8em;
+  transform: translateY(0.08em);
+}
+details.weboptional[open] > summary::before {
+  content: '▾';
+}
+details.weboptional > summary:hover {
+  color: #333;
+}
+details.weboptional[open] > summary {
+  margin-bottom: 0.6rem;
+}
+
+/* --- Inline collapsibles: notes and experiments ----------- */
+details.notes,
+details.experiments {
+  margin: 0.55em 0 0.85em;
+  font-size: 0.95em;
+}
+details.notes > summary,
+details.experiments > summary {
+  position: relative;
+  display: block;
+  cursor: pointer;
+  color: #555;
+  user-select: none;
+  list-style: none;
+}
+details.notes > summary::-webkit-details-marker,
+details.experiments > summary::-webkit-details-marker {
+  display: none;
+}
+details.notes > summary::before,
+details.experiments > summary::before {
+  content: '▸';
+  position: absolute;
+  left: -1.05em;
+  color: #888;
+  font-size: 0.8em;
+  transform: translateY(0.08em);
+}
+details.notes[open] > summary::before,
+details.experiments[open] > summary::before {
+  content: '▾';
+}
+details.notes > summary:hover,
+details.experiments > summary:hover {
+  color: #333;
+}
+details.notes[open] > summary,
+details.experiments[open] > summary {
+  margin-bottom: 0.35em;
+}
+details.notes[open] > summary ~ *,
+details.experiments[open] > summary ~ * {
+  border-left: 1px solid #d8d8d8;
+  border-right: 1px solid #d8d8d8;
+  margin-top: 0;
+  margin-bottom: 0;
+  padding-left: 0.65em;
+  padding-right: 0.65em;
+}
+details.notes[open] > summary ~ ul,
+details.notes[open] > summary ~ ol,
+details.experiments[open] > summary ~ ul,
+details.experiments[open] > summary ~ ol {
+  padding-left: 2.1em;
+}
+details.notes[open] li,
+details.experiments[open] li {
+  margin-bottom: 0.55rem;
+}
+details.notes[open] li > p,
+details.experiments[open] li > p {
+  margin-bottom: 0.4rem;
+}
+details.notes[open] > summary + *,
+details.experiments[open] > summary + * {
+  border-top: 1px solid #d8d8d8;
+  border-top-left-radius: 4px;
+  border-top-right-radius: 4px;
+  padding-top: 0.75em;
+}
+details.notes[open] > :last-child,
+details.experiments[open] > :last-child {
+  border-bottom: 1px solid #d8d8d8;
+  border-bottom-left-radius: 4px;
+  border-bottom-right-radius: 4px;
+  padding-bottom: 0.75em;
+}
+
+/* --- Margin sidenotes (wide viewports) -------------------- */
+.footnote-sidenote {
+  display: none;
+}
+
+@media (min-width: 1320px) {
+  article {
+    position: relative; /* anchor for absolutely-positioned sidenotes */
+  }
+  .footnote-sidenote {
+    display: block;
+    position: absolute;
+    left: calc(100% + 1.25rem);
+    width: 220px;
+    font-size: 0.8rem;
+    line-height: 1.5;
+    color: #555;
+    padding: 0.35rem 0.55rem;
+    border-radius: 4px;
+    transition: background-color 0.15s ease;
+    z-index: 15;
+  }
+  .footnote-sidenote p {
+    margin: 0;
+    display: inline;
+  }
+  .footnote-sidenote p + p {
+    display: block;
+    margin-top: 0.4rem;
+  }
+  .footnote-sidenote-number {
+    font-weight: 600;
+    color: #4a7c8a;
+    margin-right: 0.35em;
+    font-variant-numeric: tabular-nums;
+  }
+  /* Soft highlight on hover — synced with its ref */
+  .footnote-sidenote:hover,
+  .footnote-sidenote.is-active,
+  .footnote-ref.is-active + .footnote-sidenote {
+    background-color: rgb(251, 248, 246);
+  }
+  .footnote-ref:hover,
+  .footnote-ref.is-active {
+    background-color: rgb(251, 248, 246);
+  }
+  /* Sidenotes replace the popup on wide viewports — bottom list stays. */
+  .footnote-tooltip {
+    display: none !important;
+  }
+}
+
 /* --- References section ----------------------------------- */
 #refs {
   margin-top: 3rem;
@@ -397,7 +697,7 @@ a:hover {
   display: block;
   font-size: 1.55rem;
   font-weight: 600;
-  color: #111;
+  color: #888;
   letter-spacing: -0.01em;
   padding-bottom: 0.8rem;
   border-top: 1px solid #ececec;
@@ -438,6 +738,12 @@ blockquote {
 figure {
   margin: 1.5rem 0;
   text-align: center;
+  width: 90vw;
+  max-width: 1100px;
+  margin-left: 50%;
+  transform: translateX(-50%);
+  position: relative;
+  z-index: 5;
 }
 
 figure img {
@@ -452,10 +758,52 @@ figcaption {
   text-align: left;
 }
 
+/* --- Figure grids (tabular images from LaTeX) ------------- */
+figure > table {
+  width: 100%;
+  border: none;
+  margin: 0;
+}
+
+figure > table td {
+  border: none;
+  padding: 0.2rem 0.3rem;
+  vertical-align: middle;
+}
+
+figure > table img {
+  width: 100% !important;
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+
+figure > table tr:first-child td {
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: #555;
+  padding-bottom: 0.3rem;
+}
+
+figure > table tr:has(img) > td:first-child:not(:has(img)) {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: #555;
+  padding: 0 0.3rem;
+  max-height: 3em;
+}
+
+figure > table tbody tr:last-child td {
+  border-bottom: none;
+}
+
 /* --- Print ------------------------------------------------ */
 @media print {
   .toc-sidebar { display: none; }
   .citation-tooltip { display: none !important; }
+  .footnote-tooltip { display: none !important; }
   body { font-size: 11pt; }
   a { color: inherit; text-decoration: none; }
 }

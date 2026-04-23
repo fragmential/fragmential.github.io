@@ -19,17 +19,21 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Install pandoc
+      - name: Install build dependencies
         run: |
-          curl -sLO https://github.com/jgm/pandoc/releases/download/3.9.0.2/pandoc-3.9.0.2-1-amd64.deb
+          sudo apt-get update
+          sudo apt-get install -y pdf2svg
+          curl -fsSLO https://github.com/jgm/pandoc/releases/download/3.9.0.2/pandoc-3.9.0.2-1-amd64.deb
           sudo dpkg -i pandoc-3.9.0.2-1-amd64.deb
 
       - name: Generate site
         run: |
           chmod +x ./regen
           ./regen
-          mkdir public
+          rm -rf public
+          mkdir -p public/attachments
           cp index.html style.css public/
+          cp -R attachments/cropped public/attachments/
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v5

@@ -6,10 +6,39 @@
 \usepackage{bm}
 \usepackage{hyperref}
 \usepackage{graphicx}
+\providecommand{\rotatebox}[2]{#2} % pandoc fallback (LaTeX ignores — already defined by graphicx)
 \usepackage{booktabs}
 \usepackage{microtype}
 \usepackage{parskip}
 \usepackage{natbib}
+\usepackage{comment}
+
+% ---- web-only collapsible (hidden from PDF, becomes <details> on web) ----
+\excludecomment{weboptional}
+
+% ---- notes (visible in PDF, collapsible on web) ----
+% Optional arg = summary label (may contain inline formatting). Default: "Notes".
+\newenvironment{notes}[1][Notes]{%
+  \par\vspace{0.2em}#1:%
+  \begin{itemize}%
+}{%
+  \end{itemize}%
+}
+
+% ---- experiments (nested under a hypothesis / proposal; same treatment both outputs) ----
+\newenvironment{experiments}[1][Experiments]{%
+  \par\vspace{0.2em}#1\par\vspace{0.1em}%
+}{%
+  \par%
+}
+
+% ---- figure grid trim (bp) ----
+\newlength{\cropL}\setlength{\cropL}{20bp}   % left crop for inner columns
+\newlength{\cropLfirst}\setlength{\cropLfirst}{0bp}  % left crop for leftmost column (keep y-axis)
+\newlength{\cropB}\setlength{\cropB}{0bp}    % bottom crop for bottom row
+\newlength{\cropBtop}\setlength{\cropBtop}{20bp}  % bottom crop for top row (remove x-axis)
+\newlength{\cropR}\setlength{\cropR}{0bp}    % right crop
+\newlength{\cropT}\setlength{\cropT}{20bp}   % top crop
 
 % ---- notation shortcuts ----
 \newcommand{\R}{\mathbb{R}}
@@ -228,49 +257,238 @@ When capturing only the final token, it is economical to store the activation em
 
 Covariance matrices are accumulated in \texttt{float64} for numerical stability after millions of accumulations; activations are cast from lower precision to \texttt{float32} before forming outer products.
 
-% % =========================================================
-% \section{Experiments}
-% % =========================================================
+% =========================================================
+\section{Findings}
+% =========================================================
 
-% \subsection{Final residual stream}
+\subsection{Reproducing \texorpdfstring{\citet{li2025tracing}}{Li et al. (2025)}}
 
-% The most basic question is how the final output representation changes shape over training.
-% We track RankMe, trace (total signal energy), and mean norm across all checkpoints, comparing:
-% \begin{itemize}
-%   \item Centered vs.\ uncentered covariance (does the mean carry most of the energy?).
-%   \item Training set vs.\ FineWeb (are these properties distribution-specific?).
-%   \item Before vs.\ after the final layer norm (how much does normalisation change the geometry?).
-% \end{itemize}
+Reproducing The final layer RankMe with the training dataset shows that the shape of the plot remains consistent, and the entropy- and compression seeking curves are in fact much more pronounced on the model's training set.
 
-% The main models are Pythia-1B, Pythia-6.9B, OLMo-2-1B, and OLMo-2-7B.
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=0.48\linewidth]{attachments/li_reproduction/rankme_Pythia_1B_Deduped.pdf}
+  \hfill
+  \includegraphics[width=0.48\linewidth]{attachments/li_reproduction/rankme_OLMo-2_1B.pdf}
+  \caption{Final residual RankMe over training, comparing the model's training set against FineWeb, with centered and uncentered covariance. The entropy-seeking and compression-seeking phases are more pronounced on the training set.}
+  \label{fig:rankme_trainset}
+\end{figure}
 
-% \subsection{K-FAC}
+Unfortunately, although the shape of the plot is consistent with that of \citet{li2025tracing}, we report a lower peak RankMe value for fineweb than they do, using the same setup that they do.
 
-% We focus on late-layer MLP projections (layer 15 for 1B models, layer 23 for 7B), where the gradient signal tends to be strongest and most structured.
-% For each we plot trace, log-determinant, RankMe, and peak eigenvalue of $\bm{\Sigma}_A$, $\bm{\Sigma}_G$, and the joint K-FAC spectrum.
+\subsection{How is the residual stream's geometry formed within the model?}
 
-% \subsection{Behaviour of MLP layers}
+The residual stream at its final point is of course the sum of the output of every block in the model. So does every one of these blocks also output the same pattern, or are the entropy-seeking and compression-seeking phases at the final point of the residual formed through a complex interaction between the signals added.
 
-% We sweep across all blocks and study the spectral properties at each stage of the MLP:
-% \begin{itemize}
-%   \item Up/gate projection inputs: the residual stream entering the block.
-%   \item Up/gate projection outputs: the post-nonlinearity features (GELU or SiLU).
-%   \item Down-projection inputs: the combined gate $\times$ up features (OLMo-2) or the GELU output (Pythia).
-%   \item Down-projection outputs: the MLP's contribution back to the residual stream.
-% \end{itemize}
+Since we collected MLP data for K-FAC, we now have MLP down-projection outputs, resembling what will be added to the residual stream. Although, for OLMo-2 models, these activations first go through an RMSNorm before being added to the residual stream. We could capture the activations after the RMSNorm in the future.
 
-% For each of these we report log-det, peak eigenvalue, RankMe, mean fraction $\rho_\mu$, and the full eigenvalue histogram.
+Looking at the RankMe statistics of these activations shows that they surprisingly do not generally share the compression-seeking phase of the final residual.
 
-% \subsection{Gradient covariances}
+\begin{figure}[ht]
+  \centering
+  \newlength{\gridimg}\setlength{\gridimg}{0.23\linewidth}%
+  \setlength{\tabcolsep}{2pt}
+  \begin{tabular}{@{}c@{\hspace{2pt}} cccc@{}}
+    & \small Pythia-1B & \small Pythia-6.9B & \small OLMo-2-1B & \small OLMo-2-7B \\[2pt]
+    \rotatebox{90}{\small\hspace{1em}\shortstack{Centered\\RankMe}} &
+    \includegraphics[width=\gridimg, trim=\cropL{} \cropBtop{} \cropR{} \cropT, clip]{attachments/mlp_down/py1b_rm_c.pdf} &  % trim:20,20,0,20
+    \includegraphics[width=\gridimg, trim=\cropL{} \cropBtop{} \cropR{} \cropT, clip]{attachments/mlp_down/py6.9b_rm_c.pdf} &   % trim:20,20,0,20
+    \includegraphics[width=\gridimg, trim=\cropL{} \cropBtop{} \cropR{} \cropT, clip]{attachments/mlp_down/ol1b_rm_c.pdf} &      % trim:20,20,0,20
+    \includegraphics[width=\gridimg, trim=\cropL{} \cropBtop{} \cropR{} \cropT, clip]{attachments/mlp_down/ol7b_rm_c.pdf} \\[4pt] % trim:20,20,0,20
+    \rotatebox{90}{\small\hspace{0.5em}\shortstack{Uncentered\\RankMe}} &
+    \includegraphics[width=\gridimg, trim=\cropL{} \cropB{} \cropR{} \cropT, clip]{attachments/mlp_down/py1b_rm_u.pdf} &  % trim:20,0,0,20
+    \includegraphics[width=\gridimg, trim=\cropL{} \cropB{} \cropR{} \cropT, clip]{attachments/mlp_down/py6.9b_rm_u.pdf} &   % trim:20,0,0,20
+    \includegraphics[width=\gridimg, trim=\cropL{} \cropB{} \cropR{} \cropT, clip]{attachments/mlp_down/ol1b_rm_u.pdf} &      % trim:20,0,0,20
+    \includegraphics[width=\gridimg, trim=\cropL{} \cropB{} \cropR{} \cropT, clip]{attachments/mlp_down/ol7b_rm_u.pdf} \\      % trim:20,0,0,20
+  \end{tabular}
+  \caption{RankMe of MLP down-projection outputs over training.}
+  \label{fig:rankme_grid}
+\end{figure}
 
-% Using sampled-label backpropagation we collect $\bm{\Sigma}_G$ at all MLP projections.
-% This allows us to study the full K-FAC structure by combining activation covariances from one projection with gradient covariances from another, forming the joint curvature spectrum.
-% We also produce layer-wise heatmaps of $\alpha$ and RankMe to see whether layers specialise differently over training.
+Most of the layers in most of the models do have a small dip, but it isn't as significant as the original compression seeking phase, and it is very short, after which the uncentered covariance stays mostly constant. Only layer OLMo-2 7B has one layer that really does compress strongly in the end, however, that is exactly the point at which the final residual actually starts to grow in entropy again. Interestingly, when we plot uncentered RankMe, we do see the compression-seeking phase. Indicating the mean is large enough to cause significant perceived compression. This is still in contrast to the final point of the residual stream, which shows a similar significant compression even when centered.
 
-% \subsection{Residual stream gradients}
+I hypothesise that the means of the intermediate layers do not align with each other or the mean of the residual. This then causes the first few directions of the residual to become the means of the layers.
 
-% We also collect gradient covariances at the final residual stream.
-% This shows how the gradient signal reaching the output changes over training, and how it interacts with the final layer norm.
+Another observation, is that the activations at the first and last layers tend to have a significantly lower RankMe value than in the middle. For pythia models, we see this even more clearly at the input of the down-projection.
+
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=0.48\linewidth]{attachments/mlp_down_in/py1b.pdf}
+  \hfill
+  \includegraphics[width=0.48\linewidth]{attachments/mlp_down_in/py6.9b.pdf}
+  \caption{RankMe of MLP down-projection inputs of pythia models over training. The first and last layers consistently have very low entropy relative to middle layers.}
+  \label{fig:rankme_mlp_down}
+\end{figure}
+
+This is remarkable, because in literature, the middle layers often appear as a \emph{compression valley}. Although this tends to be associated with attention sinks and massive activations. However, because of the way we collect data, the likelihood of reading a BOS token is quite low. Additionally, the statement in literature that the middle layers appear to have low activations applies to the residual stream, not in the intermediate position of the MLPs.
+
+\subsection{Other interesting activation covariance observations}
+
+In the OLMo family, there is one part of training in which the layer 0 mean dominates the activation covariance. We measure at the input of the up-projection of the first layer. Pythia has a LayerNorm present before this exact hookpoint, so it may be nullified by that, yet still present before the LayerNorm. That must be tested separately.
+
+\begin{figure}[ht]
+  \centering
+  \setlength{\tabcolsep}{2pt}
+  \begin{tabular}{@{}cccc@{}}
+    \small Pythia-1B & \small Pythia-6.9B & \small OLMo-2-1B & \small OLMo-2-7B \\[2pt]
+    \includegraphics[width=0.24\linewidth]{attachments/layer0_mean/py1b.pdf} &
+    \includegraphics[width=0.24\linewidth]{attachments/layer0_mean/py6.9b.pdf} &
+    \includegraphics[width=0.24\linewidth]{attachments/layer0_mean/ol1b.pdf} &
+    \includegraphics[width=0.24\linewidth]{attachments/layer0_mean/ol7b.pdf} \\
+  \end{tabular}
+  \caption{Mean fraction of total activation energy ($\rho_\mu$) at the MLP up-projection input over training, shown for selected layers. In OLMo, layer~0 exhibits a large transient mean-dominance peak.}
+  \label{fig:layer0_mean}
+\end{figure}
+
+At first, it seems this is just the point at which the input-embedding learns the most common token, but oddly enough this peak happens quite late in training, around the start of the compression seeking phase. It starts growing shortly after the learning rate scheduler has finished warmup, but it lasts until surpringly long after.
+
+\subsection{K-FAC of MLP weights}
+
+We find that our K-FAC plots are in general difficult to interpret. The type of plot differs wildly by model family, likely in large due to differences in layernorm positioning and other architectural differences.
+
+Here we show the log-determinants of the of the up-projections.
+
+\begin{figure}[ht]
+  \centering
+  \setlength{\tabcolsep}{2pt}
+  \begin{tabular}{@{}cccc@{}}
+    \small Pythia-1B & \small Pythia-6.9B & \small OLMo-2-1B & \small OLMo-2-7B \\[2pt]
+    \includegraphics[width=0.24\linewidth]{attachments/kfac/py1b_up.pdf} &
+    \includegraphics[width=0.24\linewidth]{attachments/kfac/py6.9b_up.pdf} &
+    \includegraphics[width=0.24\linewidth]{attachments/kfac/ol1b_up.pdf} &
+    \includegraphics[width=0.24\linewidth]{attachments/kfac/ol7b_up.pdf} \\
+  \end{tabular}
+  \caption{K-FAC log-determinants of MLP up-projection covariance factors over training, shown for selected layers.}
+  \label{fig:kfac_up}
+\end{figure}
+
+K-FAC also makes assumptions on model convergence. Meaning that training checkpoint values may not correctly represent curvature. The relationship between the Hessian and Fisher information is through the generalized Gauss-Newton decomposition:
+
+$$ H = F + S $$
+
+Where the Fisher information $F$ approximates the Hessian $H$ when the residual term $$S = \mathbb{E}_{x \sim p_{\text{data}}, y \sim p(y|x;\theta)} [\nabla^2 \log p(y|x;\theta)]$$ approaches zero. Unfortunately, during training this is never the case. Ideally, we at least approximate the size of our error term, but this is in itself also quite difficult.
+
+The cheapest curvature measurement alternative that does not make the above assumption would be the Hutchinson Trace Estimator. It would also potentially be better to take the curvature with respect to the token labels as opposed to the model's intrinsic curvature, to both reduce variance and reframe the measurement in order to observe how the model weights respond to a new sample.
+
+\section{What's next?}
+
+In the following section, I present potential next steps, research questions, and ways to answer them.
+
+\subsection{1. How the geometry phases form across layers}
+
+In the findings, we saw that the entropy-seeking and compression-seeking phases show up cleanly at the final residual, but are largely absent from individual MLP outputs. This suggests the phases are emergent from the combination of layers rather than present in each one independently.
+
+\subsubsection{Do the phases exist independently in each layer, or are they emergent from the combination of layers?}
+
+Hypotheses contributing to answering this question:
+
+\begin{itemize}
+  \item \textbf{The phases emerge through combination.}
+
+    Individual block outputs may not follow the phases themselves, but they form in the residual through constructive interference as block outputs are summed.
+    \begin{notes}
+      \item Maybe the MLP output mean, not its covariance, is what drives the residual's RankMe.
+      \item I have strong evidence for this already. MLP uncentered RankMe drops through training while centered RankMe mostly does not.
+      \item Subhypothesis: if a model used sub-layer post-norm with LayerNorm instead of RMSNorm, this probably wouldn't happen.
+    \end{notes}
+    \begin{experiments}
+    \begin{itemize}
+      \item Measure after the OLMo's block RMSNorm, not before.
+      \item Measure how much the MLP output directions align with the residual's. Including the alignment of the mean.
+      \item Measure more layers, including Attention. Compare the average output entropy of layers with the final entropy.
+      \item Compare the attention block and mlp block output entropy, perhaps only one contributes to compression-seeking.
+    \end{itemize}
+    \end{experiments}
+  \item \textbf{The phases are attributable to one type of layer more than others (MLP blocks or attention blocks).}
+  \item \textbf{The phases do form within all layers, but only after some architectural element.}
+\end{itemize}
+
+If successful, this direction naturally leads towards looking at posttraining.
+
+\subsection{2. Distinguishing maths from quotes}
+
+Although the previous direction has potential to close some open questions. It might be difficult to tie those findings to downstream phenomena. Another direction lies in fixing the work of \citet{merullo2025memorization}, which unintentionally affects downstream maths performance. From this direction, we can study the geometric structure of the datasets, rather than studying the evolution of the model's geometry. This does however lead us quite orthogonally from our current results, but makes use of our data collection framework.
+
+\subsubsection{Does maths or numerical data have more shared geometric structure than quotes or memorised data does?}
+
+Hypotheses contributing to answering this question:
+
+\begin{itemize}
+  \item \textbf{In memorised data, gradient eigenstructure is uncorrelated with activations. In maths data, it is more correlated.}
+    \begin{notes}
+      \item  Medium confidence.
+      \item To learn unstructured data, information attempts to be stored in any direction. To learn a shared mechanism, changes must be made to directions already used by other examples in the same task type.
+    \end{notes}
+    \begin{experiments}
+    \begin{itemize}
+      \item Prior step: to remove trivial, non-task-specific connections, subtract the general population's eigenspectrum from the task population's eigenspectrum.
+      \item Check similarity between the SVDs of activations and gradients.
+      \item Check properties of the spectrum obtained from a generalised eigenvalue problem with those SVDs.
+    \end{itemize}
+    \end{experiments}
+  \item \textbf{Memorised spurious data does not share a common geometry beyond the general population's geometry, but in niche but logical data, there is a shared structure within the category that lies in the tail of the general population.}
+    \begin{notes}
+      \item High confidence.
+      \item After accounting for the general population's structure present in most data, maths-like data still has common shared directions that are negligible in the general population, while memorisation has little additional structure.
+    \end{notes}
+    \begin{experiments}
+    \begin{itemize}
+      \item Check properties of the spectrum obtained from a generalised eigenvalue problem between the task and general populations.
+      \item Check properties of the resorted eigenspectrum after subtracting the general population's eigenstructure from the task population's eigenstructure.
+    \end{itemize}
+    \end{experiments}
+\end{itemize}
+
+\subsubsection{Can we remove low-curvature K-FAC weight directions without affecting performance on niche non-memorisation tasks such as maths?}
+
+Hypotheses contributing to answering this question:
+
+\begin{itemize}
+  \item \textbf{We can account for directions we want to keep by resorting the K-FAC components, factoring in the task-specific structure we don't want to remove.}
+    \begin{notes}
+      \item This is a hardcoded, non-general solution. Potential band-aids:
+        \begin{itemize}
+          \item Automate by accounting for any and all downstream tasks we care about.
+          \item Use findings from the two research questions above to rate data sources by cohesion, and account only for those that have common structure. It is unrealistic on both points to do this for every possible useful type of data, but it is still an upgrade over hardcoding one specific source.
+        \end{itemize}
+    \end{notes}
+    \begin{experiments}
+    A K-FAC layer eigenvalue is the activation covariance component's eigenvalue multiplied by the gradient covariance component's eigenvalue. We could:
+    \begin{itemize}
+      \item Replace the basis (of activations or gradients) with another basis that accounts for task-specific structure.
+      \item Leave the original bases in place, but project another eigenbasis with its eigenvectors onto them to obtain new eigenvalues that are only used for sorting.
+    \end{itemize}
+    \end{experiments}
+\end{itemize}
+
+\begin{weboptional}{3. Annoying unknowns that may still be worth investigating}
+\subsubsection{Why do middle-layer MLPs have \emph{higher} entropy than the first or last layer?}
+
+This is the opposite of the typical ``compression valleys'' phenomenon in the literature, where middle layers are reported to have low entropy.
+
+\begin{itemize}
+  \item We mask the first 30 tokens, which are the positions most likely to contain the BOS token. BOS is a common attention sink and massive activation.
+  \item The last layer may have prediction-specific properties, based on evidence from my token-space analysis with the entropy-lens.
+\end{itemize}
+
+\subsubsection{Why are some of our results different from \texorpdfstring{\citet{li2025tracing}}{Li et al.\ (2025)}?}
+
+\begin{itemize}
+  \item On the fineweb RankMe being consistently somewhat lower than theirs:
+    \begin{itemize}
+      \item Perhaps different dataloading.
+      \item Perhaps they normalise.
+    \end{itemize}
+  \item On the per-layer RankMe:
+    \begin{itemize}
+      \item Most likely Pythia's prenorm sits before our hook, so we aren't really measuring the residual stream.
+      \item Potentially all-token selection vs last-token selection.
+    \end{itemize}
+\end{itemize}
+\end{weboptional}
+
+
+
 
 % =========================================================
 \bibliographystyle{plainnat}

@@ -1,4 +1,152 @@
 #!/bin/bash
-pandoc main.tex -s -o index.html --katex --citeproc \
+set -euo pipefail
+
+for cmd in pandoc pdf2svg python3 sed sort find grep; do
+  if ! command -v "$cmd" >/dev/null 2>&1; then
+    echo "Missing required command: $cmd" >&2
+    exit 1
+  fi
+done
+
+if [ ! -d attachments ]; then
+  echo "Missing required directory: attachments" >&2
+  exit 1
+fi
+
+# Keep no-argument web labels in sync with the LaTeX environment defaults.
+tex_default_label() {
+  sed -n "s|.*\\\\newenvironment{$1}\\[1\\]\\[\\([^]]*\\)\\].*|\\1|p" main.tex | head -n 1 | sed 's/[&\]/\\&/g; s/|/\\|/g'
+}
+
+NOTES_LABEL=$(tex_default_label notes)
+EXPERIMENTS_LABEL=$(tex_default_label experiments)
+
+# Parse trim comments from main.tex and crop PDFs accordingly.
+# Each \includegraphics line can have a comment: % trim:L,B,R,T (in bp)
+# LaTeX trim order: L,B,R,T from the page edges.
+# We convert PDF->SVG first, then adjust the SVG viewBox to apply the crop.
+
+# Convert all PDFs to SVG
+find attachments -name '*.pdf' -not -path 'attachments/cropped/*' | while read -r f; do
+  rel="${f#attachments/}"
+  mkdir -p "attachments/cropped/$(dirname "$rel")"
+  pdf2svg "$f" "attachments/cropped/${rel%.pdf}.svg"
+done
+
+# Apply trim to SVGs by adjusting the viewBox
+# 1bp = 1/72 inch; pdf2svg uses 72dpi so 1bp = 1 SVG user unit
+sed -n 's/.*{\(attachments\/[^}]*\.pdf\)}.*% trim:\([0-9]*\),\([0-9]*\),\([0-9]*\),\([0-9]*\).*/\1 \2 \3 \4 \5/p' main.tex | \
+  sort -u | while read -r file L B R T; do
+    rel="${file#attachments/}"
+    svg="attachments/cropped/${rel%.pdf}.svg"
+    [ -f "$svg" ] || continue
+    # Extract current viewBox or width/height
+    python3 -c "
+import re, sys
+with open('$svg', 'r') as f:
+    content = f.read()
+L, B, R, T = $L, $B, $R, $T
+# Try viewBox first
+m = re.search(r'viewBox=\"([^\"]+)\"', content)
+if m:
+    vx, vy, vw, vh = [float(x) for x in m.group(1).split()]
+else:
+    # Fall back to width/height attributes
+    wm = re.search(r'width=\"([0-9.]+)', content)
+    hm = re.search(r'height=\"([0-9.]+)', content)
+    vx, vy, vw, vh = 0, 0, float(wm.group(1)), float(hm.group(1))
+# Apply trim: L from left, T from top, R from right, B from bottom
+nvx = vx + L
+nvy = vy + T
+nvw = vw - L - R
+nvh = vh - T - B
+new_vb = f'{nvx} {nvy} {nvw} {nvh}'
+# Update or insert viewBox
+if m:
+    content = content[:m.start(1)] + new_vb + content[m.end(1):]
+else:
+    content = content.replace('<svg ', f'<svg viewBox=\"{new_vb}\" ', 1)
+with open('$svg', 'w') as f:
+    f.write(content)
+"
+  done
+
+# Build web version: swap .pdf -> cropped .svg paths, strip trim/clip,
+# expose web-only and supporting-notes blocks as marker headings for post-processing.
+sed -e 's|attachments/\([^}]*\)\.pdf|attachments/cropped/\1.svg|g' \
+    -e 's/, *trim=[^,]*, *clip//g' \
+    -e 's/\\shortstack{\([^\\]*\)\\\\\([^}]*\)}/\1\\newline \2/g' \
+    -e 's|\\begin{weboptional}{\(.*\)}|\\paragraph{__WEBOPTSTART__:\1}|' \
+    -e 's|\\end{weboptional}|\\paragraph{__WEBOPTEND__}|' \
+    -e 's|\\begin{notes}\[\(.*\)\]|\\paragraph{__NOTESSTART__@@@LABEL@@@\1@@@LABEL@@@}\\begin{itemize}|' \
+    -e "s|\\\\begin{notes}|\\\\paragraph{__NOTESSTART__@@@LABEL@@@${NOTES_LABEL}@@@LABEL@@@}\\\\begin{itemize}|" \
+    -e 's|\\end{notes}|\\end{itemize}\\paragraph{__NOTESEND__}|' \
+    -e 's|\\begin{experiments}\[\(.*\)\]|\\paragraph{__EXPSTART__@@@LABEL@@@\1@@@LABEL@@@}|' \
+    -e "s|\\\\begin{experiments}|\\\\paragraph{__EXPSTART__@@@LABEL@@@${EXPERIMENTS_LABEL}@@@LABEL@@@}|" \
+    -e 's|\\end{experiments}|\\paragraph{__EXPEND__}|' \
+    main.tex > main_web.tex
+
+pandoc main_web.tex -s -o index.html --katex --citeproc \
   --bibliography citations.bib --template template.html \
   --toc --toc-depth 1
+
+# Post-process index.html:
+#  - Wrap __WEBOPTSTART__:title ... __WEBOPTEND__ blocks in <details class="weboptional">
+#  - Wrap __NOTESSTART__ ... __NOTESEND__ blocks in <details class="notes">
+#  - Wrap __EXPSTART__ ... __EXPEND__ blocks in <details class="experiments">
+python3 <<'PYEOF'
+import re, html as htmllib
+
+with open('index.html') as f:
+    html = f.read()
+
+def wrap_weboptional(m):
+    title = htmllib.unescape(m.group(1)).strip()
+    body = m.group(2)
+    return (f'<details class="weboptional"><summary>{title}</summary>\n'
+            f'{body}\n</details>')
+
+html = re.sub(
+    r'<h[1-6][^>]*>\s*__WEBOPTSTART__:([^<]+?)\s*</h[1-6]>(.*?)<h[1-6][^>]*>\s*__WEBOPTEND__\s*</h[1-6]>',
+    wrap_weboptional, html, flags=re.DOTALL)
+
+def _details(class_name, label, body):
+    label = label.strip()
+    return (f'<details class="{class_name}"><summary>{label}</summary>\n'
+            f'{body}\n</details>')
+
+def _notes_with_label(m):
+    label = m.group(1).strip()
+    body = m.group(2)
+    return _details('notes', label, body)
+
+html = re.sub(
+    r'<h[1-6][^>]*>\s*__NOTESSTART__@@@LABEL@@@(.*?)@@@LABEL@@@\s*</h[1-6]>(.*?)<h[1-6][^>]*>\s*__NOTESEND__\s*</h[1-6]>',
+    _notes_with_label, html, flags=re.DOTALL)
+
+def _exp(m):
+    label = m.group(1).strip()
+    body = m.group(2)
+    return _details('experiments', label, body)
+
+html = re.sub(
+    r'<h[1-6][^>]*>\s*__EXPSTART__@@@LABEL@@@(.*?)@@@LABEL@@@\s*</h[1-6]>(.*?)<h[1-6][^>]*>\s*__EXPEND__\s*</h[1-6]>',
+    _exp, html, flags=re.DOTALL)
+
+with open('index.html', 'w') as f:
+    f.write(html)
+PYEOF
+
+missing_assets=0
+while IFS= read -r asset; do
+  if [ ! -f "$asset" ]; then
+    echo "Missing generated asset referenced by index.html: $asset" >&2
+    missing_assets=1
+  fi
+done < <(grep -o 'attachments/cropped/[^" >)]*\.svg' index.html | sort -u)
+
+if [ "$missing_assets" -ne 0 ]; then
+  exit 1
+fi
+
+rm -f main_web.tex

@@ -108,6 +108,92 @@ $endif$
     tip.addEventListener('mouseleave', hideTip);
   });
 
+  // --- Footnotes: hover popup + margin sidenote (LessWrong-style) ---
+  var articleEl = document.querySelector('article');
+  var sidenoteEntries = []; // { ref, sidenote } for repositioning on resize
+
+  document.querySelectorAll('a.footnote-ref').forEach(function (ref) {
+    var href = ref.getAttribute('href');
+    if (!href || href.charAt(0) !== '#') return;
+    var target = document.getElementById(href.slice(1));
+    if (!target) return;
+
+    // Clone the target, strip the back-to-text arrow
+    var clone = target.cloneNode(true);
+    clone.querySelectorAll('.footnote-back, a[role="doc-backlink"]').forEach(function (el) {
+      el.remove();
+    });
+
+    // --- Popup tooltip (shown only on narrow viewports, hidden by CSS on wide) ---
+    var tip = document.createElement('div');
+    tip.className = 'footnote-tooltip';
+    tip.innerHTML = clone.innerHTML;
+    document.body.appendChild(tip);
+
+    var hideTimer = null;
+    function showTip() {
+      clearTimeout(hideTimer);
+      tip.style.display = 'block';
+      requestAnimationFrame(function () {
+        var r = ref.getBoundingClientRect();
+        var top = r.top + window.scrollY - tip.offsetHeight - 10;
+        var left = r.left + window.scrollX;
+        if (left + tip.offsetWidth > window.innerWidth - 16)
+          left = window.innerWidth - tip.offsetWidth - 16;
+        if (left < 8) left = 8;
+        if (top < window.scrollY + 8) top = r.bottom + window.scrollY + 8;
+        tip.style.top = top + 'px';
+        tip.style.left = left + 'px';
+      });
+    }
+    function hideTip() {
+      hideTimer = setTimeout(function () { tip.style.display = 'none'; }, 120);
+    }
+
+    ref.addEventListener('mouseenter', showTip);
+    ref.addEventListener('mouseleave', hideTip);
+    ref.addEventListener('focus', showTip);
+    ref.addEventListener('blur', hideTip);
+    tip.addEventListener('mouseenter', function () { clearTimeout(hideTimer); });
+    tip.addEventListener('mouseleave', hideTip);
+
+    // --- Margin sidenote (shown only on wide viewports, via CSS media query) ---
+    if (!articleEl) return;
+    var sidenote = document.createElement('aside');
+    sidenote.className = 'footnote-sidenote';
+    var sup = ref.querySelector('sup');
+    var numSpan = document.createElement('span');
+    numSpan.className = 'footnote-sidenote-number';
+    numSpan.textContent = (sup ? sup.textContent : '') + '.';
+    sidenote.appendChild(numSpan);
+    var contentSpan = document.createElement('span');
+    contentSpan.innerHTML = clone.innerHTML;
+    sidenote.appendChild(contentSpan);
+    articleEl.appendChild(sidenote);
+
+    // Sync hover state between ref and sidenote
+    function activate() { ref.classList.add('is-active'); sidenote.classList.add('is-active'); }
+    function deactivate() { ref.classList.remove('is-active'); sidenote.classList.remove('is-active'); }
+    ref.addEventListener('mouseenter', activate);
+    ref.addEventListener('mouseleave', deactivate);
+    sidenote.addEventListener('mouseenter', activate);
+    sidenote.addEventListener('mouseleave', deactivate);
+
+    sidenoteEntries.push({ ref: ref, sidenote: sidenote });
+  });
+
+  function positionSidenotes() {
+    if (!articleEl || !sidenoteEntries.length) return;
+    var articleTop = articleEl.getBoundingClientRect().top;
+    sidenoteEntries.forEach(function (entry) {
+      var refTop = entry.ref.getBoundingClientRect().top;
+      entry.sidenote.style.top = (refTop - articleTop) + 'px';
+    });
+  }
+  positionSidenotes();
+  window.addEventListener('resize', positionSidenotes);
+  window.addEventListener('load', positionSidenotes);
+
   // --- TOC collapse toggle ---
   var tocToggle = document.querySelector('.toc-toggle');
   var tocSidebar = document.querySelector('.toc-sidebar');
@@ -118,30 +204,64 @@ $endif$
     });
   }
 
-  // --- TOC active-section tracking on scroll ---
-  var tocLinks = Array.from(document.querySelectorAll('.toc-sidebar a'));
-  var allHeadings = Array.from(document.querySelectorAll('article h1[id], article h2[id], article h3[id], article h4[id]'));
-  if (allHeadings.length && tocLinks.length) {
-    // Map every heading id → nearest ancestor id that has a TOC entry
-    var tocIds = new Set(tocLinks.map(function(a) { return a.getAttribute('href').slice(1); }));
-    var lastTocId = '';
-    var headingToToc = {};
-    allHeadings.forEach(function(h) {
-      if (tocIds.has(h.id)) lastTocId = h.id;
-      headingToToc[h.id] = lastTocId;
-    });
-    function updateToc() {
-      var scrollY = window.scrollY + 100;
-      var current = allHeadings[0] ? allHeadings[0].id : '';
-      allHeadings.forEach(function(h) {
-        if (h.offsetTop <= scrollY) current = h.id;
+  // --- Fade collapsed TOC when overlapping figures ---
+  if (tocSidebar) {
+    var figures = document.querySelectorAll('figure');
+    var chevron = tocSidebar.querySelector('.toc-chevron');
+    var checkOverlap = function () {
+      if (!tocSidebar.classList.contains('collapsed')) {
+        tocSidebar.style.opacity = '';
+        return;
+      }
+      var rect = chevron.getBoundingClientRect();
+      var dominated = false;
+      figures.forEach(function (fig) {
+        var fr = fig.getBoundingClientRect();
+        if (rect.bottom > fr.top && rect.top < fr.bottom &&
+            rect.right > fr.left && rect.left < fr.right) {
+          dominated = true;
+        }
       });
-      var active = headingToToc[current] || current;
-      tocLinks.forEach(function(a) {
-        a.classList.toggle('active', a.getAttribute('href') === '#' + active);
+      tocSidebar.style.opacity = dominated ? '0' : '';
+    };
+    window.addEventListener('scroll', checkOverlap, { passive: true });
+    tocToggle.addEventListener('click', function () {
+      requestAnimationFrame(checkOverlap);
+    });
+  }
+
+  // --- TOC active-section tracking on scroll ---
+  var tocLinks = Array.from(document.querySelectorAll('.toc-sidebar a[href^="#"]'));
+  var tocHeadings = tocLinks.map(function (a) {
+    var id = decodeURIComponent(a.hash.slice(1));
+    var heading = document.getElementById(id);
+    return heading ? { id: id, link: a, heading: heading } : null;
+  }).filter(Boolean);
+
+  if (tocHeadings.length) {
+    function updateToc() {
+      var active = tocHeadings[0];
+      var marker = Math.min(window.innerHeight * 0.35, 180);
+
+      tocHeadings.forEach(function (entry) {
+        if (entry.heading.getBoundingClientRect().top <= marker) {
+          active = entry;
+        }
+      });
+
+      // At the very bottom, make sure the final section is selected even if
+      // the last heading never reaches the marker line.
+      if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 2) {
+        active = tocHeadings[tocHeadings.length - 1];
+      }
+
+      tocLinks.forEach(function (a) {
+        a.classList.toggle('active', a === active.link);
       });
     }
+
     window.addEventListener('scroll', updateToc, { passive: true });
+    window.addEventListener('resize', updateToc);
     updateToc();
   }
 })();
