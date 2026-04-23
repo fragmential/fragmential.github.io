@@ -100,6 +100,34 @@ import re, html as htmllib
 with open('index.html') as f:
     html = f.read()
 
+def ordinal_day(day):
+    if 10 <= day % 100 <= 20:
+        suffix = 'th'
+    else:
+        suffix = {1: 'st', 2: 'nd', 3: 'rd'}.get(day % 10, 'th')
+    return f'{day}{suffix}'
+
+def format_display_date(date_text):
+    date_text = date_text.strip()
+    iso = re.fullmatch(r'(\d{4})-(\d{1,2})-(\d{1,2})', date_text)
+    if not iso:
+        return date_text
+
+    year, month, day = (int(part) for part in iso.groups())
+    month_names = [
+        'January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December'
+    ]
+    if not 1 <= month <= 12:
+        return date_text
+
+    return f'{ordinal_day(day)} {month_names[month - 1]} {year}'
+
+html = re.sub(
+    r'(<span class="article-date">)([^<]+)(</span>)',
+    lambda m: m.group(1) + format_display_date(m.group(2)) + m.group(3),
+    html)
+
 def wrap_weboptional(m):
     title = htmllib.unescape(m.group(1)).strip()
     body = m.group(2)
