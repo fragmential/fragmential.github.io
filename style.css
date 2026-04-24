@@ -8,6 +8,7 @@
 html {
   font-size: 16px;
   scroll-behavior: smooth;
+  overflow-x: hidden;
 }
 
 body {
@@ -18,6 +19,7 @@ body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   line-height: 1.65;
   -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
 }
 
 /* --- Page layout: 3-column grid, article always centered -- */
@@ -322,13 +324,41 @@ p {
 
 /* --- Math ------------------------------------------------- */
 .math.display {
-  overflow-x: auto;
+  --display-equation-base-size: 1.21em;
+  --display-equation-scale: 1;
+  --equation-tag-space: clamp(2.75rem, 11vw, 3.5rem);
+  display: block;
+  max-width: 100%;
+  overflow-x: hidden;
   overflow-y: hidden;
   padding: 0.25rem 0;
+  overscroll-behavior-x: contain;
+}
+
+.math.display.has-overflow {
+  overflow-x: auto;
+  padding-bottom: 0.5rem;
 }
 
 .katex-display {
+  max-width: 100%;
+  overflow: hidden;
   margin: 1.1rem 0 !important;
+}
+
+.katex-display > .katex {
+  display: block;
+  max-width: 100%;
+  padding-right: 0;
+  font-size: calc(var(--display-equation-base-size) * var(--display-equation-scale));
+}
+
+.katex-display > .katex > .katex-html {
+  max-width: 100%;
+}
+
+.katex-display > .katex > .katex-html > .tag {
+  display: none !important;
 }
 
 /* --- Lists ------------------------------------------------ */

@@ -100,6 +100,225 @@ import re, html as htmllib
 with open('index.html') as f:
     html = f.read()
 
+responsive_math_script = r'''<script>document.addEventListener("DOMContentLoaded", function () {
+ var mathElements = Array.prototype.slice.call(document.getElementsByClassName("math"));
+ var inlineMath = [];
+ var displayMath = [];
+ var macros = [];
+ var resizeTimer = null;
+
+ function renderMath(element, tex, displayMode) {
+  katex.render(tex, element, {
+   displayMode: displayMode,
+   throwOnError: false,
+   macros: macros,
+   fleqn: false
+  });
+ }
+
+ function normalizeDisplayTex(tex) {
+  return tex.replace(/\s+/g, ' ').trim();
+ }
+
+ function extractEquationBody(tex) {
+  var match = tex.trim().match(/^\\begin\{equation\}([\s\S]*?)\\end\{equation\}$/);
+  return match ? normalizeDisplayTex(match[1]) : null;
+ }
+
+ function replaceTopLevel(tex, rules) {
+  var out = '';
+  var depth = 0;
+
+  for (var i = 0; i < tex.length; i++) {
+   var matchedRule = null;
+
+   if (depth === 0) {
+    for (var r = 0; r < rules.length; r++) {
+     var rule = rules[r];
+     if (tex.slice(i, i + rule.token.length) === rule.token) {
+      matchedRule = rule;
+      break;
+     }
+    }
+   }
+
+   if (matchedRule) {
+    out += matchedRule.replacement;
+    i += matchedRule.token.length - 1;
+    continue;
+   }
+
+   var ch = tex.charAt(i);
+   if (ch === '{') depth += 1;
+   if (ch === '}') depth = Math.max(0, depth - 1);
+   out += ch;
+  }
+
+  return out;
+ }
+
+ function buildAlignedEquation(body) {
+  return '\\begin{equation}\\begin{aligned} & ' +
+   body.trim().replace(/^(?:&\s*)+/, '') +
+   ' \\end{aligned}\\end{equation}';
+ }
+
+ function buildGatheredEquation(body) {
+  return '\\begin{equation}\\begin{gathered} ' +
+   body.trim().replace(/^(?:\\\\\s*)+/, '') +
+   ' \\end{gathered}\\end{equation}';
+ }
+
+ function buildDisplayVariant(tex, mode) {
+  var body = extractEquationBody(tex);
+  if (!body) return tex;
+
+  var rules;
+  var builder;
+
+  if (mode === 'wrapped') {
+   rules = [
+    { token: ', \\qquad', replacement: ', \\\\ & ' },
+    { token: ',\\qquad', replacement: ', \\\\ & ' },
+    { token: '\\qquad', replacement: '\\\\ & ' },
+    { token: ' + ', replacement: ' \\\\ & + ' },
+    { token: ' = ', replacement: ' \\\\ & = ' },
+    { token: ' \\approx ', replacement: ' \\\\ & \\approx ' },
+    { token: ' \\otimes ', replacement: ' \\\\ & \\otimes ' }
+   ];
+   builder = buildAlignedEquation;
+  } else {
+   rules = [
+    { token: ', \\qquad', replacement: ', \\\\ ' },
+    { token: ',\\qquad', replacement: ', \\\\ ' },
+    { token: '\\qquad', replacement: '\\\\ ' }
+   ];
+   builder = buildGatheredEquation;
+  }
+
+  var rewrittenBody = replaceTopLevel(body, rules);
+  if (rewrittenBody === body) return tex;
+  return builder(rewrittenBody);
+ }
+
+ function getDisplayMetrics(element) {
+  var katexHtml = element.querySelector('.katex-html');
+  var tag = katexHtml ? katexHtml.querySelector('.tag') : null;
+  var bases = katexHtml ? Array.prototype.filter.call(katexHtml.children, function (child) {
+   return child.classList && child.classList.contains('base');
+  }) : [];
+  var contentWidth = 0;
+
+  if (bases.length) {
+   contentWidth = Math.max.apply(null, bases.map(function (base) {
+    return base.getBoundingClientRect().width;
+   }));
+  } else if (katexHtml) {
+   contentWidth = katexHtml.getBoundingClientRect().width;
+  }
+
+  var available = element.getBoundingClientRect().width - (tag ? tag.getBoundingClientRect().width + 12 : 0);
+  return {
+   available: Math.max(0, available),
+   contentWidth: contentWidth,
+   overflow: Math.max(0, contentWidth - available)
+  };
+ }
+
+ function setDisplayScale(element, scale) {
+  element.style.setProperty('--display-equation-scale', scale.toFixed(3));
+ }
+
+ function applyBestScale(element) {
+  setDisplayScale(element, 1);
+  var metrics = getDisplayMetrics(element);
+  if (!metrics.contentWidth || metrics.overflow <= 1) return metrics;
+
+  var scale = Math.max(0.75, Math.min(1, metrics.available / metrics.contentWidth));
+  setDisplayScale(element, scale);
+  return getDisplayMetrics(element);
+ }
+
+ function updateOverflowClass(element) {
+  element.classList.toggle('has-overflow', getDisplayMetrics(element).overflow > 1);
+ }
+
+ function renderResponsiveDisplay(element) {
+  var originalTex = element.dataset.originalTex;
+  var preferredTex = element.dataset.preferredTex;
+  var wrappedTex = element.dataset.wrappedTex;
+
+  setDisplayScale(element, 1);
+  renderMath(element, originalTex, true);
+  if (getDisplayMetrics(element).overflow <= 1) {
+   updateOverflowClass(element);
+   return;
+  }
+
+  if (preferredTex !== originalTex) {
+   renderMath(element, preferredTex, true);
+   if (getDisplayMetrics(element).overflow <= 1) {
+    updateOverflowClass(element);
+    return;
+   }
+  }
+
+  var scaledMetrics = applyBestScale(element);
+  if (scaledMetrics.overflow <= 1) {
+   updateOverflowClass(element);
+   return;
+  }
+
+  if (wrappedTex !== preferredTex) {
+   setDisplayScale(element, 1);
+   renderMath(element, wrappedTex, true);
+   if (getDisplayMetrics(element).overflow <= 1) {
+    updateOverflowClass(element);
+    return;
+   }
+   applyBestScale(element);
+  }
+
+  updateOverflowClass(element);
+ }
+
+ mathElements.forEach(function (element) {
+  if (element.tagName !== 'SPAN') return;
+
+  var tex = element.textContent || '';
+  if (element.classList.contains('display')) {
+   element.dataset.originalTex = tex;
+   element.dataset.preferredTex = buildDisplayVariant(tex, 'preferred');
+   element.dataset.wrappedTex = buildDisplayVariant(tex, 'wrapped');
+   displayMath.push(element);
+  } else {
+   inlineMath.push({ element: element, tex: tex });
+  }
+ });
+
+ inlineMath.forEach(function (entry) {
+  renderMath(entry.element, entry.tex, false);
+ });
+
+ function renderDisplayMath() {
+  displayMath.forEach(renderResponsiveDisplay);
+ }
+
+ renderDisplayMath();
+
+ window.addEventListener('resize', function () {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(renderDisplayMath, 80);
+ });
+});</script>'''
+
+html = re.sub(
+    r'<script>document\.addEventListener\("DOMContentLoaded", function \(\) \{\s*var mathElements = document\.getElementsByClassName\("math"\);.*?</script>',
+    lambda _: responsive_math_script,
+    html,
+    count=1,
+    flags=re.DOTALL)
+
 def ordinal_day(day):
     if 10 <= day % 100 <= 20:
         suffix = 'th'
@@ -110,18 +329,25 @@ def ordinal_day(day):
 def format_display_date(date_text):
     date_text = date_text.strip()
     iso = re.fullmatch(r'(\d{4})-(\d{1,2})-(\d{1,2})', date_text)
-    if not iso:
-        return date_text
-
-    year, month, day = (int(part) for part in iso.groups())
     month_names = [
         'January', 'February', 'March', 'April', 'May', 'June',
         'July', 'August', 'September', 'October', 'November', 'December'
     ]
-    if not 1 <= month <= 12:
-        return date_text
 
-    return f'{ordinal_day(day)} {month_names[month - 1]} {year}'
+    if iso:
+        year, month, day = (int(part) for part in iso.groups())
+        if not 1 <= month <= 12:
+            return date_text
+        return f'{ordinal_day(day)} {month_names[month - 1]} {year}'
+
+    day_month_year = re.fullmatch(
+        r'(\d{1,2})\s+(' + '|'.join(month_names) + r')\s+(\d{4})',
+        date_text)
+    if day_month_year:
+        day, month_name, year = day_month_year.groups()
+        return f'{ordinal_day(int(day))} {month_name} {year}'
+
+    return date_text
 
 html = re.sub(
     r'(<span class="article-date">)([^<]+)(</span>)',
